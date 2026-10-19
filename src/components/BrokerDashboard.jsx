@@ -30,6 +30,37 @@ function statusClass(s) {
     : '';
 }
 
+/** Money with no sign — used for premium and capital columns. */
+function fmtMoney(n, digits = 2) {
+  if (n == null) return '—';
+  const v = Number(n);
+  if (Number.isNaN(v)) return '—';
+  return `₹${v.toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+function fmtQty(n) {
+  if (n == null) return '—';
+  const v = Number(n);
+  if (Number.isNaN(v)) return '—';
+  return v.toLocaleString('en-IN');
+}
+
+function orDash(v) {
+  return v === null || v === undefined || v === '' ? '—' : v;
+}
+
+/** BUY renders green, SELL red — same palette as the P&L columns. */
+function sideClass(side) {
+  const s = String(side || '').toUpperCase();
+  if (s === 'BUY') return 'up';
+  if (s === 'SELL') return 'down';
+  return '';
+}
+
+function badgeClass(mode) {
+  return mode === 'live' ? 'badge-live' : mode === 'paper' ? 'badge-paper' : '';
+}
+
 function detectBrokerType(broker) {
   const name = (broker?.name || broker?.broker_type || broker?.id || '').toLowerCase();
   if (name.includes('groww')) return 'groww';
@@ -358,11 +389,277 @@ function UnknownSection({ brokerName }) {
   );
 }
 
+/* ---------- bot grids ---------- */
+
+const TRADE_MODE_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'paper', label: 'Paper' },
+  { id: 'live', label: 'Live' },
+];
+
+/**
+ * Closed bot round trips, laid out like the reference grid:
+ * Date | Day | Type | Symbol | Side | Entry | Exit | Qty | Capital |
+ * P&L | Est. charges | Net P&L | Reason
+ *
+ * The bot keeps ONE book for the whole account, so this table is the same on
+ * every broker tab — the filter only narrows it to the paper or live side.
+ */
+function BotTradesGrid({ mode, onModeChange }) {
+  const [trades, setTrades] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.botTradesGrid({ mode: mode === 'all' ? undefined : mode, limit: 100 });
+      setTrades(res.trades || []);
+      setErr(null);
+    } catch (e) {
+      setTrades([]);
+      setErr(e.message);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const rows = trades || [];
+  const netTotal = rows.reduce((a, t) => a + Number(t.netPnl || 0), 0);
+
+  return (
+    <>
+      <div className="grid-toolbar">
+        <div className="grid-filters">
+          {TRADE_MODE_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`grid-filter${mode === f.id ? ' grid-filter-active' : ''}`}
+              onClick={() => onModeChange?.(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid-total">
+          {rows.length} closed {rows.length === 1 ? 'trade' : 'trades'}
+          <span className={pnlClass(netTotal)}> {pnl(netTotal, 0)}</span>
+        </div>
+      </div>
+
+      {err && <div className="live-empty">Bot trades unavailable: {err}</div>}
+
+      {rows.length > 0 ? (
+        <div className="trades-table-wrap">
+          <table className="trades-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Day</th>
+                <th>Type</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th className="num">Entry</th>
+                <th className="num">Exit</th>
+                <th className="num">Qty</th>
+                <th className="num">Capital</th>
+                <th className="num">P&amp;L</th>
+                <th className="num">Est. charges</th>
+                <th className="num">Net P&amp;L</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => (
+                <tr key={`trade-${t.id}`}>
+                  <td className="muted nowrap">{orDash(t.date)}</td>
+                  <td className="muted nowrap">{orDash(t.day)}</td>
+                  <td><span className="type-tag">{orDash(t.type)}</span></td>
+                  <td style={{ fontWeight: 600 }}>{orDash(t.symbol)}</td>
+                  <td className={sideClass(t.side)}>{orDash(t.side)}</td>
+                  <td className="num">{fmtMoney(t.entry)}</td>
+                  <td className="num">{fmtMoney(t.exit)}</td>
+                  <td className="num">{fmtQty(t.qty)}</td>
+                  <td className="num">{fmtMoney(t.capital, 0)}</td>
+                  <td className={`num ${pnlClass(t.pnl)}`}>{pnl(t.pnl)}</td>
+                  <td className="num muted">{fmtMoney(t.charges)}</td>
+                  <td className={`num ${pnlClass(t.netPnl)}`}>{pnl(t.netPnl)}</td>
+                  <td className="reason-cell">{orDash(t.reason)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        !err && <div className="live-empty">No closed bot trades yet for this mode.</div>
+      )}
+
+      <div className="grid-footnote">
+        Capital = entry premium × qty · Charges are an estimate (STT, exchange txn, SEBI, stamp duty, GST), not the broker&apos;s computed figure ·
+        P&amp;L is gross, Net P&amp;L deducts the estimated charges · cross-check against the real contract note.
+      </div>
+    </>
+  );
+}
+
+/** Open and squared-off bot positions — the "bought / sold" book. */
+function BotPositionsGrid({ mode }) {
+  const [positions, setPositions] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.botPositionsGrid({ mode: mode === 'all' ? undefined : mode, limit: 100 });
+      setPositions(res.positions || []);
+    } catch {
+      setPositions([]);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const rows = (positions || []);
+  const open = rows.filter((p) => p.status === 'OPEN');
+  const closed = rows.filter((p) => p.status !== 'OPEN');
+
+  const renderRow = (p) => (
+    <tr key={`pos-${p.id}`}>
+      <td className="muted nowrap">{orDash(p.date)}</td>
+      <td className="muted nowrap">{orDash(p.day)}</td>
+      <td style={{ fontWeight: 600 }}>{orDash(p.symbol)}</td>
+      <td><span className="type-tag">{orDash(p.type)}</span></td>
+      <td className={sideClass(p.side)}>{orDash(p.side)}</td>
+      <td className="num">{fmtQty(p.qty)}</td>
+      <td className="num">{fmtMoney(p.avgPrice)}</td>
+      <td className="num muted">{p.stopLoss != null ? fmtMoney(p.stopLoss) : '—'}</td>
+      <td className="num muted">{p.target != null ? fmtMoney(p.target) : '—'}</td>
+      <td className="num">{fmtMoney(p.value, 0)}</td>
+      <td className={`num ${pnlClass(p.pnl)}`}>{p.pnl == null ? '—' : pnl(p.pnl)}</td>
+      <td><span className={`pos-tag ${p.status === 'OPEN' ? 'pos-tag-open' : ''}`}>{p.status}</span></td>
+    </tr>
+  );
+
+  return (
+    <>
+      {open.length > 0 && (
+        <>
+          <div className="live-subhead">
+            Open positions <span className="section-badge">{open.length}</span>
+          </div>
+          <div className="trades-table-wrap">
+            <table className="trades-table">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Day</th><th>Symbol</th><th>Type</th><th>Side</th>
+                  <th className="num">Qty</th><th className="num">Avg Price</th>
+                  <th className="num">Stop</th><th className="num">Target</th>
+                  <th className="num">Value</th><th className="num">P&amp;L</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>{open.map(renderRow)}</tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {closed.length > 0 && (
+        <>
+          <div className="live-subhead">
+            Squared off <span className="section-badge">{closed.length}</span>
+          </div>
+          <div className="trades-table-wrap">
+            <table className="trades-table">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Day</th><th>Symbol</th><th>Type</th><th>Side</th>
+                  <th className="num">Qty</th><th className="num">Avg Price</th>
+                  <th className="num">Exit</th><th className="num">Value</th>
+                  <th className="num">Net P&amp;L</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closed.map((p) => (
+                  <tr key={`pos-${p.id}`}>
+                    <td className="muted nowrap">{orDash(p.date)}</td>
+                    <td className="muted nowrap">{orDash(p.day)}</td>
+                    <td style={{ fontWeight: 600 }}>{orDash(p.symbol)}</td>
+                    <td><span className="type-tag">{orDash(p.type)}</span></td>
+                    <td className={sideClass(p.side)}>{orDash(p.side)}</td>
+                    <td className="num">{fmtQty(p.qty)}</td>
+                    <td className="num">{fmtMoney(p.avgPrice)}</td>
+                    <td className="num">{p.exitPrice != null ? fmtMoney(p.exitPrice) : '—'}</td>
+                    <td className="num">{fmtMoney(p.value, 0)}</td>
+                    <td className={`num ${pnlClass(p.pnl)}`}>{p.pnl == null ? '—' : pnl(p.pnl)}</td>
+                    <td><span className="pos-tag">{p.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {rows.length === 0 && <div className="live-empty">No bot positions yet for this mode.</div>}
+    </>
+  );
+}
+
+/** Live tail of the engine's in-memory event log. */
+function BotLogPanel() {
+  const [lines, setLines] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.botLog();
+      setLines(res.log || []);
+    } catch {
+      setLines([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const rows = lines || [];
+
+  return (
+    <div className="bot-log-wrap">
+      {rows.length > 0 ? rows.map((l, i) => (
+        <div className="bot-log-line" key={`log-${l.time}-${i}`}>
+          <span className="bot-log-time">{l.timeIst || (l.time || '').slice(11, 19) || '--:--:--'}</span>
+          <span className="bot-log-event">{l.event}</span>
+          {l.count > 1 ? <span className="muted">×{l.count}</span> : null}
+          <span className="bot-log-detail">
+            {typeof l.detail === 'string' ? l.detail : l.detail ? JSON.stringify(l.detail) : ''}
+          </span>
+        </div>
+      )) : <div className="live-empty">No bot activity logged yet.</div>}
+    </div>
+  );
+}
+
 /* ---------- main component ---------- */
 
-export default function BrokerDashboard({ broker, data }) {
+export default function BrokerDashboard({ broker, data, fyersAuth }) {
   const brokerType = detectBrokerType(broker);
   const brokerName = broker?.name || broker?.broker_type || 'Unknown';
+
+  // Connection state differs per broker: Groww reports it inside `data.auth`,
+  // Fyers carries it separately in `fyersAuth` (its payload has no auth field).
+  const conn = brokerType === 'fyers'
+    ? { ok: Boolean(fyersAuth?.valid), partial: false }
+    : { ok: Boolean(data?.auth?.valid), partial: Boolean(data?.partial) };
+  const connLabel = conn.ok ? 'Connected' : conn.partial ? 'Partial' : 'Disconnected';
+  const connCls = conn.ok ? 'ok' : conn.partial ? 'warn' : 'bad';
 
   // Bot state
   const [botStatus, setBotStatus] = useState(null);
@@ -418,6 +715,10 @@ export default function BrokerDashboard({ broker, data }) {
   if (botAnalytics) for (const [id, v] of Object.entries(botAnalytics)) analyticsMap[id] = v;
   const liveOk = s?.live?.enabled;
 
+  // Which side of the bot book the grids show. The engine keeps a single
+  // book per mode, so this filter is global rather than per broker.
+  const [botModeFilter, setBotModeFilter] = useState('all');
+
   return (
     <div className="bot-panel animate-in">
       {/* ===== Account Overview ===== */}
@@ -428,8 +729,8 @@ export default function BrokerDashboard({ broker, data }) {
             {brokerName} Dashboard
           </div>
           <div className="live-panel-meta">
-            <span className={`conn-status ${data?.auth?.valid ? 'ok' : data?.partial ? 'warn' : 'bad'}`}>
-              ● {data?.auth?.valid ? 'Connected' : data?.partial ? 'Partial' : 'Disconnected'}
+            <span className={`conn-status ${connCls}`}>
+              ● {connLabel}
             </span>
           </div>
         </div>
@@ -484,6 +785,50 @@ export default function BrokerDashboard({ broker, data }) {
         {brokerType === 'fyers' && <FyersSection data={data} />}
         {brokerType === 'unknown' && <UnknownSection brokerName={brokerName} />}
       </div>
+
+      {/* ===== Bot trades — bought / sold grid ===== */}
+      {brokerType !== 'unknown' && (
+        <div className="panel live-panel">
+          <div className="section-header">
+            <div className="section-title">
+              <span className="icon" style={{ background: 'var(--accent-purple-light)' }}>📒</span>
+              Recent bot trades
+            </div>
+            <span className="section-badge">
+              {botModeFilter === 'live' ? 'Live book' : botModeFilter === 'paper' ? 'Paper book' : 'All books'}
+            </span>
+          </div>
+          <BotTradesGrid mode={botModeFilter} onModeChange={setBotModeFilter} />
+        </div>
+      )}
+
+      {/* ===== Bot positions ===== */}
+      {brokerType !== 'unknown' && (
+        <div className="panel live-panel">
+          <div className="section-header">
+            <div className="section-title">
+              <span className="icon" style={{ background: 'var(--accent-cyan-light)' }}>📦</span>
+              Bot positions
+            </div>
+            <span className="section-badge">{botModeFilter}</span>
+          </div>
+          <BotPositionsGrid mode={botModeFilter} />
+        </div>
+      )}
+
+      {/* ===== Bot activity log ===== */}
+      {brokerType !== 'unknown' && (
+        <div className="panel live-panel">
+          <div className="section-header">
+            <div className="section-title">
+              <span className="icon" style={{ background: 'var(--accent-amber-light)' }}>🧾</span>
+              Bot activity log
+            </div>
+            <span className="section-badge">live tail</span>
+          </div>
+          <BotLogPanel />
+        </div>
+      )}
 
       {/* ===== Accuracy section ===== */}
       <div className="panel live-panel">

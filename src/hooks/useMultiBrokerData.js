@@ -13,6 +13,7 @@ export default function useMultiBrokerData(pollMs = 3000) {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [fyersAuth, setFyersAuth] = useState(null);
+  const [marketIndices, setMarketIndices] = useState([]);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -45,6 +46,7 @@ export default function useMultiBrokerData(pollMs = 3000) {
 
       // fyers is already { positions, funds, orders } or null from the server
       setFyers(data.fyers ?? null);
+      setMarketIndices(data.indices ?? []);
       setError(null);
     } else {
       const msg =
@@ -75,5 +77,7 @@ export default function useMultiBrokerData(pollMs = 3000) {
     refresh: load,
     /** Live Fyers token state from the backend, for the connection strip. */
     fyersAuth,
+    /** Live index quotes (NIFTY, SENSEX, etc.) from the market data feed. */
+    marketIndices,
   };
 }

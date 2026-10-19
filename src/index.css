@@ -2656,3 +2656,133 @@ select.input { cursor: pointer; }
   .conf-gate-detail, .conf-factor-detail { display: none; }
   .conf-levels { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ============================================
+   BOT TRADE / POSITION GRIDS + ACTIVITY LOG
+   ============================================ */
+
+.trades-table td.nowrap { white-space: nowrap; }
+
+/* --- toolbar: mode filter + running total --- */
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.grid-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.grid-filter {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.grid-filter:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.grid-filter-active {
+  background: var(--profit-green-light);
+  border-color: var(--profit-green);
+  color: var(--profit-green);
+}
+.grid-total {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+.grid-total .profit { color: var(--profit-green); }
+.grid-total .loss { color: var(--loss-red); }
+
+/* --- cell tags --- */
+.type-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.reason-cell {
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 200px;
+  word-break: break-word;
+}
+.pos-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+.pos-tag-open {
+  background: var(--profit-green-light);
+  color: var(--profit-green);
+}
+
+/* --- footnote under the trades grid --- */
+.grid-footnote {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* --- bot activity log --- */
+.bot-log-wrap {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.bot-log-wrap::-webkit-scrollbar { width: 6px; }
+.bot-log-wrap::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+.bot-log-line {
+  display: flex;
+  gap: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-light);
+  align-items: baseline;
+}
+.bot-log-line:last-child { border-bottom: none; }
+.bot-log-line:hover { background: var(--bg-card-hover); }
+.bot-log-time { flex: 0 0 68px; color: var(--text-muted); font-size: 11px; }
+.bot-log-event {
+  flex: 0 0 118px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent-cyan);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bot-log-detail {
+  flex: 1;
+  color: var(--text-secondary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .bot-log-event { flex-basis: 84px; }
+  .bot-log-time { flex-basis: 56px; }
+  .grid-toolbar { flex-direction: column; align-items: flex-start; }
+}

@@ -72,10 +72,10 @@ export default function CoinSwitchDashboard({ data }) {
   const depthRows = (depth?.bids?.length || depth?.asks?.length)
     ? Array.from({ length: Math.min(depth?.bids?.length || 0, depth?.asks?.length || 0, 10) })
         .map((_, i) => ({
-          bidQty: depth.bids[i]?.[1] ?? '—',
-          bidPrice: depth.bids[i]?.[0] ?? '—',
-          askQty: depth.asks[i]?.[1] ?? '—',
-          askPrice: depth.asks[i]?.[0] ?? '—',
+          bidQty: depth.bids[i]?.quantity ?? '—',
+          bidPrice: depth.bids[i]?.price ?? '—',
+          askQty: depth.asks[i]?.quantity ?? '—',
+          askPrice: depth.asks[i]?.price ?? '—',
         }))
     : [];
   const tradeRows = (trades?.trades || []).slice(0, 12).map((t) => ({

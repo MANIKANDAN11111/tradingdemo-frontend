@@ -6,6 +6,7 @@ import BrokerDashboard from './components/BrokerDashboard';
 import AddBrokerModal from './components/AddBrokerModal';
 import CoinSwitchDashboard from './components/CoinSwitchDashboard';
 import LoginPage from './components/LoginPage';
+import TickerBar from './components/TickerBar';
 import useMultiBrokerData from './hooks/useMultiBrokerData';
 import { api } from './api/client';
 import { isAuthorized, getSession, saveSession, clearSession } from './auth/session';
@@ -31,7 +32,7 @@ function Dashboard({ theme, onToggleTheme, user, onLogout, onAddBroker, showAddB
   const [activeBrokerId, setActiveBrokerId] = useState('groww');
 
   // Multi-broker data
-  const { groww, fyers, loading, error, lastUpdated, refresh, fyersAuth } = useMultiBrokerData(POLL_MS);
+  const { groww, fyers, loading, error, lastUpdated, refresh, fyersAuth, marketIndices } = useMultiBrokerData(POLL_MS);
 
   // Load custom brokers from database
   useEffect(() => {
@@ -54,7 +55,7 @@ function Dashboard({ theme, onToggleTheme, user, onLogout, onAddBroker, showAddB
   // Update connection status
   useEffect(() => {
     setBrokers((prev) => prev.map((b) => {
-      if (b.id === 'groww') return { ...b, connected: Boolean(groww) };
+      if (b.id === 'groww') return { ...b, connected: Boolean(groww?.auth?.valid) };
       if (b.id === 'fyers') return { ...b, connected: Boolean(fyers) };
       return b;
     }));
@@ -73,6 +74,9 @@ function Dashboard({ theme, onToggleTheme, user, onLogout, onAddBroker, showAddB
           onToggleTheme={onToggleTheme}
           onAddBroker={onAddBroker}
         />
+
+        {/* Live market ticker — NIFTY, SENSEX, BANKNIFTY, etc. */}
+        <TickerBar indices={marketIndices} live={true} />
 
         {/* Broker navigation tabs */}
         <BrokerNavBar

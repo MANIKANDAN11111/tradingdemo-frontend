@@ -128,6 +128,16 @@ export const api = {
   botAnalyticsSummary: () => get('/bot/analytics/summary'),
   botLog: () => get('/bot/log'),
   botTrades: () => get('/bot/trades'),
+  botTradesGrid: ({ mode, limit = 100 } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (mode) q.set('mode', mode);
+    return get(`/bot/trades/grid?${q.toString()}`);
+  },
+  botPositionsGrid: ({ mode, limit = 100 } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (mode) q.set('mode', mode);
+    return get(`/bot/positions/grid?${q.toString()}`);
+  },
   botPositions: () => get('/bot/positions'),
   botOrders: () => get('/bot/orders'),
   botEquity: () => get('/bot/equity'),
